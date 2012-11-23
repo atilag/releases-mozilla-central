@@ -105,6 +105,7 @@ class autoJArray {
     // clang on OS X 10.7 does not have std::nullptr_t
     typedef decltype(nullptr) jArray_nullptr_t;
 #  else
+    #include <cstddef>
     // decltype(nullptr) does not evaluate to std::nullptr_t on GCC 4.6.3
     typedef std::nullptr_t jArray_nullptr_t;
 #  endif
