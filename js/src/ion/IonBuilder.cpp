@@ -7,6 +7,7 @@
 
 #include "IonAnalysis.h"
 #include "IonBuilder.h"
+#include "Lowering.h"
 #include "MIRGraph.h"
 #include "Ion.h"
 #include "IonAnalysis.h"
@@ -380,7 +381,7 @@ IonBuilder::processIterators()
     while (!worklist.empty()) {
         MPhi *phi = worklist.popCopy();
         phi->setIterator();
-        phi->setHasBytecodeUses();
+        phi->setFoldedUnchecked();
 
         for (MUseDefIterator iter(phi); iter; iter++) {
             if (iter.def()->isPhi()) {
@@ -518,10 +519,12 @@ IonBuilder::rewriteParameters()
         MInstruction *actual = NULL;
         switch (definiteType) {
           case JSVAL_TYPE_UNDEFINED:
+            param->setFoldedUnchecked();
             actual = MConstant::New(UndefinedValue());
             break;
 
           case JSVAL_TYPE_NULL:
+            param->setFoldedUnchecked();
             actual = MConstant::New(NullValue());
             break;
 
@@ -556,7 +559,7 @@ IonBuilder::initParameters()
     current->initSlot(info().thisSlot(), param);
 
     for (uint32_t i = 0; i < info().nargs(); i++) {
-        param = MParameter::New(i, oracle->parameterTypeSet(script_, i));
+        param = MParameter::New(i, cloneTypeSet(oracle->parameterTypeSet(script_, i)));
         current->add(param);
         current->initSlot(info().argSlot(i), param);
     }
@@ -685,7 +688,6 @@ IonBuilder::traverseBytecode()
 
         // Nothing in inspectOpcode() is allowed to advance the pc.
         JSOp op = JSOp(*pc);
-        markPhiBytecodeUses(pc);
         if (!inspectOpcode(op))
             return false;
 
@@ -759,19 +761,6 @@ IonBuilder::snoopControlFlow(JSOp op)
         break;
     }
     return ControlStatus_None;
-}
-
-void
-IonBuilder::markPhiBytecodeUses(jsbytecode *pc)
-{
-    unsigned nuses = analyze::GetUseCount(script_, pc - script_->code);
-    for (unsigned i = 0; i < nuses; i++) {
-        MDefinition *def = current->peek(-int32_t(i + 1));
-        if (def->isPassArg())
-            def = def->toPassArg()->getArgument();
-        if (def->isPhi())
-            def->toPhi()->setHasBytecodeUses();
-    }
 }
 
 bool
@@ -4867,9 +4856,11 @@ IonBuilder::pushTypeBarrier(MInstruction *ins, types::StackTypeSet *actual,
         MInstruction *replace = NULL;
         switch (type) {
           case JSVAL_TYPE_UNDEFINED:
+            ins->setFoldedUnchecked();
             replace = MConstant::New(UndefinedValue());
             break;
           case JSVAL_TYPE_NULL:
+            ins->setFoldedUnchecked();
             replace = MConstant::New(NullValue());
             break;
           case JSVAL_TYPE_UNKNOWN:
@@ -5243,7 +5234,7 @@ IonBuilder::jsop_getelem_dense()
     MDefinition *obj = current->pop();
 
     JSValueType knownType = JSVAL_TYPE_UNKNOWN;
-    if (!needsHoleCheck && !barrier) {
+    if (!barrier) {
         knownType = types->getKnownTypeTag();
 
         // Null and undefined have no payload so they can't be specialized.
@@ -5252,6 +5243,11 @@ IonBuilder::jsop_getelem_dense()
         // and rely on pushTypeBarrier and DCE to replace it with a null/undefined
         // constant.
         if (knownType == JSVAL_TYPE_UNDEFINED || knownType == JSVAL_TYPE_NULL)
+            knownType = JSVAL_TYPE_UNKNOWN;
+
+        // Different architectures may want typed element reads which require
+        // hole checks to be done as either value or typed reads.
+        if (needsHoleCheck && !LIRGenerator::allowTypedElementHoleCheck())
             knownType = JSVAL_TYPE_UNKNOWN;
     }
 
@@ -5304,6 +5300,7 @@ GetTypedArrayLength(MDefinition *obj)
     if (obj->isConstant()) {
         JSObject *array = &obj->toConstant()->value().toObject();
         int32_t length = (int32_t) TypedArray::length(array);
+        obj->setFoldedUnchecked();
         return MConstant::New(Int32Value(length));
     }
     return MTypedArrayLength::New(obj);
@@ -5315,6 +5312,7 @@ GetTypedArrayElements(MDefinition *obj)
     if (obj->isConstant()) {
         JSObject *array = &obj->toConstant()->value().toObject();
         void *data = TypedArray::viewData(array);
+        obj->setFoldedUnchecked();
         return MConstantElements::New(data);
     }
     return MTypedArrayElements::New(obj);
@@ -5633,7 +5631,8 @@ bool
 IonBuilder::jsop_arguments_length()
 {
     // Type Inference has guaranteed this is an optimized arguments object.
-    current->pop();
+    MDefinition *args = current->pop();
+    args->setFoldedUnchecked();
 
     MInstruction *ins = MArgumentsLength::New();
     current->add(ins);
@@ -5650,7 +5649,8 @@ IonBuilder::jsop_arguments_getelem()
     MDefinition *idx = current->pop();
 
     // Type Inference has guaranteed this is an optimized arguments object.
-    current->pop();
+    MDefinition *args = current->pop();
+    args->setFoldedUnchecked();
 
     // To ensure that we are not looking above the number of actual arguments.
     MArgumentsLength *length = MArgumentsLength::New();
@@ -6266,11 +6266,13 @@ IonBuilder::getPropTryConstant(bool *emitted, HandleId id, types::StackTypeSet *
     MDefinition *obj = current->pop();
 
     // Property access is a known constant -- safe to emit.
-	JS_ASSERT(!testString || !testObject);
+    JS_ASSERT(!testString || !testObject);
     if (testObject)
         current->add(MGuardObject::New(obj));
-	else if (testString)
+    else if (testString)
         current->add(MGuardString::New(obj));
+    else
+        obj->setFoldedUnchecked();
 
     MConstant *known = MConstant::New(ObjectValue(*singleton));
     if (singleton->isFunction()) {
