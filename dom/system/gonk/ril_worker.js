@@ -3117,11 +3117,9 @@ let RIL = {
    */
   sendStkTerminalProfile: function sendStkTerminalProfile(profile) {
     Buf.newParcel(REQUEST_STK_SET_PROFILE);
-    //Buf.writeUint32(profile.length * 2);
     Buf.writeUint32(profile.length * 4);
     for (let i = 0; i < profile.length; i++) {
       GsmPDUHelper.writeHexOctet(profile[i]);
-      //Buf.writeUint8(profile[i]);
     }
     Buf.writeUint32(0);
     Buf.sendParcel();
