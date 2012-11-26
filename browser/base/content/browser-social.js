@@ -137,6 +137,11 @@ let SocialUI = {
     }
   },
 
+  nonBrowserWindowInit: function SocialUI_nonBrowserInit() {
+    // Disable the social menu item in non-browser windows
+    document.getElementById("menu_socialAmbientMenu").hidden = true;
+  },
+
   // Miscellaneous helpers
   showProfile: function SocialUI_showProfile() {
     if (Social.haveLoggedInUser())
@@ -713,7 +718,7 @@ var SocialToolbar = {
   updateProvider: function () {
     if (!Social.provider)
       return;
-    this.button.setAttribute("image", Social.provider.iconURL);
+    this.button.style.listStyleImage = "url(" + Social.provider.iconURL + ")";
     this.updateButton();
     this.updateProfile();
     this.populateProviderMenus();
@@ -1088,11 +1093,6 @@ var SocialSidebar = {
 
     let sbrowser = document.getElementById("social-sidebar-browser");
 
-    if (Social.provider)
-      sbrowser.setAttribute("origin", Social.provider.origin);
-    else
-      sbrowser.removeAttribute("origin");
-
     if (hideSidebar) {
       sbrowser.removeEventListener("load", SocialSidebar._loadListener, true);
       this.setSidebarVisibilityState(false);
@@ -1108,6 +1108,7 @@ var SocialSidebar = {
         );
       }
     } else {
+      sbrowser.setAttribute("origin", Social.provider.origin);
       if (Social.provider.errorState == "frameworker-error") {
         SocialSidebar.setSidebarErrorMessage("frameworker-error");
         return;
@@ -1134,6 +1135,7 @@ var SocialSidebar = {
     if (!sbrowser.hasAttribute("origin"))
       return;
 
+    sbrowser.stop();
     sbrowser.removeAttribute("origin");
     sbrowser.setAttribute("src", "about:blank");
     SocialFlyout.unload();

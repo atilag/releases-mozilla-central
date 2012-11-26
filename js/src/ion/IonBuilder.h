@@ -288,7 +288,7 @@ class IonBuilder : public MIRGenerator
     bool initScopeChain();
     bool pushConstant(const Value &v);
     bool pushTypeBarrier(MInstruction *ins, types::StackTypeSet *actual, types::StackTypeSet *observed);
-    void monitorResult(MInstruction *ins, types::TypeSet *barrier, types::TypeSet *types);
+    void monitorResult(MInstruction *ins, types::TypeSet *barrier, types::StackTypeSet *types);
 
     JSObject *getSingletonPrototype(JSFunction *target);
 
@@ -299,19 +299,17 @@ class IonBuilder : public MIRGenerator
     MInstruction *createDeclEnvObject(MDefinition *callee, MDefinition *scopeObj);
     MInstruction *createCallObject(MDefinition *callee, MDefinition *scopeObj);
 
-    bool makeCall(HandleFunction target, uint32_t argc, bool constructing);
-
     MDefinition *walkScopeChain(unsigned hops);
 
     MInstruction *addBoundsCheck(MDefinition *index, MDefinition *length);
-    MInstruction *addShapeGuard(MDefinition *obj, const Shape *shape, BailoutKind bailoutKind);
+    MInstruction *addShapeGuard(MDefinition *obj, const UnrootedShape shape, BailoutKind bailoutKind);
 
     JSObject *getNewArrayTemplateObject(uint32_t count);
 
     bool invalidatedIdempotentCache();
 
-    bool loadSlot(MDefinition *obj, Shape *shape, MIRType rvalType);
-    bool storeSlot(MDefinition *obj, Shape *shape, MDefinition *value, bool needsBarrier);
+    bool loadSlot(MDefinition *obj, HandleShape shape, MIRType rvalType);
+    bool storeSlot(MDefinition *obj, UnrootedShape shape, MDefinition *value, bool needsBarrier);
 
     // jsop_getprop() helpers.
     bool getPropTryArgumentsLength(bool *emitted);
@@ -336,9 +334,11 @@ class IonBuilder : public MIRGenerator
     bool jsop_pos();
     bool jsop_neg();
     bool jsop_defvar(uint32_t index);
+    bool jsop_deffun(uint32_t index);
     bool jsop_notearg();
     bool jsop_funcall(uint32_t argc);
     bool jsop_funapply(uint32_t argc);
+    bool jsop_funapplyarguments(uint32_t argc);
     bool jsop_call(uint32_t argc, bool constructing);
     bool jsop_ifeq(JSOp op);
     bool jsop_condswitch();
@@ -349,7 +349,7 @@ class IonBuilder : public MIRGenerator
     bool jsop_getgname(HandlePropertyName name);
     bool jsop_setgname(HandlePropertyName name);
     bool jsop_getname(HandlePropertyName name);
-    bool jsop_intrinsicname(HandlePropertyName name);
+    bool jsop_intrinsic(HandlePropertyName name);
     bool jsop_bindname(PropertyName *name);
     bool jsop_getelem();
     bool jsop_getelem_dense();
@@ -370,13 +370,11 @@ class IonBuilder : public MIRGenerator
     bool jsop_delprop(HandlePropertyName name);
     bool jsop_newarray(uint32_t count);
     bool jsop_newobject(HandleObject baseObj);
-    bool jsop_initelem();
-    bool jsop_initelem_dense();
+    bool jsop_initelem_array();
     bool jsop_initprop(HandlePropertyName name);
     bool jsop_regexp(RegExpObject *reobj);
     bool jsop_object(JSObject *obj);
     bool jsop_lambda(JSFunction *fun);
-    bool jsop_deflocalfun(uint32_t local, JSFunction *fun);
     bool jsop_this();
     bool jsop_typeof();
     bool jsop_toid();
@@ -442,9 +440,19 @@ class IonBuilder : public MIRGenerator
                             types::StackTypeSet *types, types::StackTypeSet *barrier);
     bool makeInliningDecision(AutoObjectVector &targets, uint32_t argc);
 
+    void popFormals(uint32_t argc, MDefinition **fun, MPassArg **thisArg,
+                    Vector<MPassArg *> *args);
+    MCall *makeCallHelper(HandleFunction target, bool constructing,
+                          MDefinition *fun, MPassArg *thisArg, Vector<MPassArg *> &args);
     MCall *makeCallHelper(HandleFunction target, uint32_t argc, bool constructing);
     bool makeCallBarrier(HandleFunction target, uint32_t argc, bool constructing,
                          types::StackTypeSet *types, types::StackTypeSet *barrier);
+    bool makeCallBarrier(HandleFunction target, bool constructing,
+                         MDefinition *fun, MPassArg *thisArg, Vector<MPassArg *> &args,
+                         types::StackTypeSet *types, types::StackTypeSet *barrier);
+    bool makeCall(HandleFunction target, uint32_t argc, bool constructing);
+    bool makeCall(HandleFunction target, bool constructing,
+                  MDefinition *fun, MPassArg *thisArg, Vector<MPassArg *> &args);
 
     inline bool TestCommonPropFunc(JSContext *cx, types::StackTypeSet *types,
                                    HandleId id, JSFunction **funcp,
@@ -463,7 +471,7 @@ class IonBuilder : public MIRGenerator
                            MBasicBlock *bottom,
                            Vector<MDefinition *, 8, IonAllocPolicy> &retvalDefns);
 
-    const types::TypeSet *cloneTypeSet(const types::TypeSet *types);
+    const types::StackTypeSet *cloneTypeSet(const types::StackTypeSet *types);
 
     // A builder is inextricably tied to a particular script.
     HeapPtrScript script_;
@@ -503,7 +511,9 @@ class IonBuilder : public MIRGenerator
     Vector<ControlFlowInfo, 0, IonAllocPolicy> switches_;
     Vector<MInstruction *, 2, IonAllocPolicy> iterators_;
     TypeOracle *oracle;
+
     size_t inliningDepth;
+    Vector<MDefinition *, 0, IonAllocPolicy> inlinedArguments_;
 
     // True if script->failedBoundsCheck is set for the current script or
     // an outer script.
@@ -513,13 +523,16 @@ class IonBuilder : public MIRGenerator
     // an outer script.
     bool failedShapeGuard_;
 
-    // If this script can use a lazy arguments object, it wil be pre-created
+    // If this script can use a lazy arguments object, it will be pre-created
     // here.
     MInstruction *lazyArguments_;
+
+    // If the script use a callee, it will be retrieved in the first basic
+    // block.
+    MCallee *callee_;
 };
 
 } // namespace ion
 } // namespace js
 
 #endif // jsion_bytecode_analyzer_h__
-

@@ -147,7 +147,7 @@ function getSimpleMeasurements() {
            .getService(Ci.nsIJSEngineTelemetryStats)
            .telemetryValue;
 
-  let shutdownDuration = Services.startup.lastShutdownDuration;
+  let shutdownDuration = Telemetry.lastShutdownDuration;
   if (shutdownDuration)
     ret.shutdownDuration = shutdownDuration;
 
@@ -423,6 +423,8 @@ TelemetryPing.prototype = {
       return;
     }
 
+    let histogram = Telemetry.getHistogramById("TELEMETRY_MEMORY_REPORTER_MS");
+    let startTime = new Date();
     let e = mgr.enumerateReporters();
     while (e.hasMoreElements()) {
       let mr = e.getNext().QueryInterface(Ci.nsIMemoryReporter);
@@ -439,6 +441,7 @@ TelemetryPing.prototype = {
       catch (e) {
       }
     }
+    histogram.add(new Date() - startTime);
   },
 
   handleMemoryReport: function handleMemoryReport(id, path, units, amount) {
@@ -611,6 +614,7 @@ TelemetryPing.prototype = {
       this.sendPingsFromIterator(server, reason, i);
     }
     function onError() {
+      this.savePing(data, true);
       // Notify that testing is complete, even if we didn't send everything.
       finishPings(reason);
     }
@@ -721,7 +725,9 @@ TelemetryPing.prototype = {
       Telemetry.canRecord = false;
       return;
     }
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
     Services.obs.addObserver(this, "private-browsing", false);
+#endif
     Services.obs.addObserver(this, "profile-before-change", false);
     Services.obs.addObserver(this, "sessionstore-windows-restored", false);
     Services.obs.addObserver(this, "quit-application-granted", false);
@@ -737,6 +743,9 @@ TelemetryPing.prototype = {
       this._initialized = true;
       this.attachObservers();
       this.gatherMemory();
+
+      Telemetry.asyncFetchTelemetryData(function () {
+      });
       delete this._timer;
     }
     this._timer.initWithCallback(timerCallback.bind(this), TELEMETRY_DELAY,
@@ -943,7 +952,9 @@ TelemetryPing.prototype = {
       this._hasXulWindowVisibleObserver = false;
     }
     Services.obs.removeObserver(this, "profile-before-change");
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
     Services.obs.removeObserver(this, "private-browsing");
+#endif
     Services.obs.removeObserver(this, "quit-application-granted");
   },
 
@@ -1011,6 +1022,7 @@ TelemetryPing.prototype = {
         this.gatherMemory();
       }
       break;
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
     case "private-browsing":
       Telemetry.canRecord = aData == "exit";
       if (aData == "enter") {
@@ -1019,6 +1031,7 @@ TelemetryPing.prototype = {
         this.attachObservers()
       }
       break;
+#endif
     case "xul-window-visible":
       Services.obs.removeObserver(this, "xul-window-visible");
       this._hasXulWindowVisibleObserver = false;   

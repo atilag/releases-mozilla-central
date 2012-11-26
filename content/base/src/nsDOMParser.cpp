@@ -13,6 +13,7 @@
 #include "nsDOMJSUtils.h"
 #include "nsError.h"
 #include "nsPIDOMWindow.h"
+#include "mozilla/dom/BindingUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -420,7 +421,7 @@ nsDOMParser::InitInternal(nsISupports* aOwner, nsIPrincipal* prin,
 
     nsCOMPtr<nsIDocument> doc;
     nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aOwner);
-    if (aOwner) {
+    if (window) {
       nsCOMPtr<nsIDOMDocument> domdoc = window->GetExtantDocument();
       doc = do_QueryInterface(domdoc);
     }

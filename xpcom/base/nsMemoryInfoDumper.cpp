@@ -336,7 +336,8 @@ nsMemoryInfoDumper::DumpMemoryReportsToFile(
     nsCOMPtr<nsIMemoryReporterManager> mgr =
       do_GetService("@mozilla.org/memory-reporter-manager;1");
     NS_ENSURE_TRUE(mgr, NS_ERROR_FAILURE);
-    mgr->MinimizeMemoryUsage(callback);
+    nsCOMPtr<nsICancelableRunnable> runnable;
+    mgr->MinimizeMemoryUsage(callback, getter_AddRefs(runnable));
     return NS_OK;
   }
 
@@ -497,10 +498,11 @@ OpenTempFile(const nsACString &aFilename, nsIFile* *aFile)
     // On android the default system umask is 0077 which makes these files
     // unreadable to the shell user. In order to pull the dumps off a non-rooted
     // device we need to chmod them to something world-readable.
+    // XXX why not logFile->SetPermissions(0644);
     nsAutoCString path;
     rv = file->GetNativePath(path);
     if (NS_SUCCEEDED(rv)) {
-      chmod(PromiseFlatCString(path).get(), 0644);
+      chmod(path.get(), 0644);
     }
   }
 #endif
@@ -547,7 +549,7 @@ nsMemoryInfoDumper::DumpMemoryReportsToFileImpl(
   // Note that |mrFilename| is missing the "incomplete-" prefix; we'll tack
   // that on in a moment.
   nsCString mrFilename;
-  MakeFilename("memory-report", aIdentifier, ".json.gz", mrFilename);
+  MakeFilename("memory-report", aIdentifier, "json.gz", mrFilename);
 
   nsCOMPtr<nsIFile> mrTmpFile;
   nsresult rv;
@@ -640,7 +642,7 @@ nsMemoryInfoDumper::DumpMemoryReportsToFileImpl(
   // if present).
 
   nsCString dmdFilename;
-  MakeFilename("dmd", aIdentifier, ".txt.gz", dmdFilename);
+  MakeFilename("dmd", aIdentifier, "txt.gz", dmdFilename);
 
   nsCOMPtr<nsIFile> dmdFile;
   rv = OpenTempFile(dmdFilename, getter_AddRefs(dmdFile));

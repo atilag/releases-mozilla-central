@@ -170,6 +170,12 @@ PRThread* gCycleCollectorThread = nullptr;
 // If true, always log cycle collector graphs.
 const bool gAlwaysLogCCGraphs = false;
 
+// If true, log the cycle collector graphs during shutdown.
+const bool gLogShutdown = false;
+
+// If true, any logging done at shutdown will be AllTraces.
+const bool gAllTracesAtShutdown = false;
+
 MOZ_NEVER_INLINE void
 CC_AbortIfNull(void *ptr)
 {
@@ -1293,9 +1299,14 @@ public:
     }
     NS_DECL_ISUPPORTS
 
-    NS_IMETHOD AllTraces(nsICycleCollectorListener** aListener)
+    void SetAllTraces()
     {
         mWantAllTraces = true;
+    }
+
+    NS_IMETHOD AllTraces(nsICycleCollectorListener** aListener)
+    {
+        SetAllTraces();
         NS_ADDREF(*aListener = this);
         return NS_OK;
     }
@@ -1604,10 +1615,11 @@ private:
             // On android the default system umask is 0077 which makes these files
             // unreadable to the shell user. In order to pull the dumps off a non-rooted
             // device we need to chmod them to something world-readable.
+            // XXX why not logFile->SetPermissions(0644);
             nsAutoCString path;
             rv = logFile->GetNativePath(path);
             if (NS_SUCCEEDED(rv)) {
-                chmod(PromiseFlatCString(path).get(), 0644);
+                chmod(path.get(), 0644);
             }
         }
 #endif
@@ -2955,14 +2967,21 @@ nsCycleCollector::SuspectedCount()
 void
 nsCycleCollector::Shutdown()
 {
-    // Here we want to run a final collection and then permanently
-    // disable the collector because the program is shutting down.
-
-    nsCOMPtr<nsCycleCollectorLogger> listener;
-    if (mParams.mLogGraphs) {
-        listener = new nsCycleCollectorLogger();
+#ifndef DEBUG
+#ifndef DEBUG_CC
+    if (PR_GetEnv("XPCOM_CC_RUN_DURING_SHUTDOWN"))
+#endif
+#endif
+    {
+        nsCOMPtr<nsCycleCollectorLogger> listener;
+        if (mParams.mLogGraphs || gLogShutdown) {
+            listener = new nsCycleCollectorLogger();
+            if (gAllTracesAtShutdown) {
+                listener->SetAllTraces();
+            }
+        }
+        Collect(false, nullptr,  SHUTDOWN_COLLECTIONS(mParams), listener);
     }
-    Collect(false, nullptr, SHUTDOWN_COLLECTIONS(mParams), listener);
 
 #ifdef DEBUG_CC
     GCGraphBuilder builder(mGraph, mJSRuntime, nullptr, false);

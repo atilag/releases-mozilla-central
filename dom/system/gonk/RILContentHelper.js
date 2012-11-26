@@ -111,7 +111,11 @@ MobileICCCardLockResult.prototype = {
                       success: 'r'}
 };
 
-function MobileICCInfo() {}
+function MobileICCInfo() {
+  try {
+    this.lastKnownMcc = Services.prefs.getIntPref("ril.lastKnownMcc");
+  } catch (e) {}
+};
 MobileICCInfo.prototype = {
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIDOMMozMobileICCInfo]),
   classID:        MOBILEICCINFO_CID,
@@ -126,6 +130,7 @@ MobileICCInfo.prototype = {
 
   iccid: null,
   mcc: 0,
+  lastKnownMcc: 0,
   mnc: 0,
   spn: null,
   msisdn: null
@@ -355,6 +360,9 @@ RILContentHelper.prototype = {
   updateICCInfo: function updateICCInfo(srcInfo, destInfo) {
     for (let key in srcInfo) {
       destInfo[key] = srcInfo[key];
+      if (key === 'mcc') {
+        destInfo['lastKnownMcc'] = srcInfo[key];
+      }
     }
   },
 
@@ -570,6 +578,15 @@ RILContentHelper.prototype = {
     }
     cpmm.sendAsyncMessage("RIL:SendStkMenuSelection", {itemIdentifier: itemIdentifier,
                                                        helpRequested: helpRequested});
+  },
+
+  sendStkTimerExpiration: function sendStkTimerExpiration(window,
+                                                          timer) {
+    if (window == null) {
+      throw Components.Exception("Can't get window object",
+                                  Cr.NS_ERROR_UNEXPECTED);
+    }
+    cpmm.sendAsyncMessage("RIL:SendStkTimerExpiration", {timer: timer});
   },
 
   sendStkEventDownload: function sendStkEventDownload(window,
@@ -853,6 +870,9 @@ RILContentHelper.prototype = {
         break;
       case "RIL:IccInfoChanged":
         this.updateICCInfo(msg.json, this.iccInfo);
+        if (this.iccInfo.mcc) {
+          Services.prefs.setIntPref("ril.lastKnownMcc", this.iccInfo.mcc);
+        }
         Services.obs.notifyObservers(null, kIccInfoChangedTopic, null);
         break;
       case "RIL:VoiceInfoChanged":

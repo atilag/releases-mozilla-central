@@ -8,6 +8,8 @@
 #ifndef jsion_frames_h__
 #define jsion_frames_h__
 
+#include "mozilla/DebugOnly.h"
+
 #include "jsfun.h"
 #include "jstypes.h"
 #include "jsutil.h"
@@ -15,8 +17,8 @@
 #include "IonCode.h"
 #include "IonFrameIterator.h"
 
-struct JSFunction;
-struct JSScript;
+class JSFunction;
+class JSScript;
 
 namespace js {
 namespace ion {

@@ -107,6 +107,9 @@ var shell = {
       return;
     }
 
+    // purge the queue.
+    this.CrashSubmit.pruneSavedDumps();
+
     try {
       // Check if we should automatically submit this crash.
       if (Services.prefs.getBoolPref("app.reportCrashes")) {
@@ -135,7 +138,7 @@ var shell = {
           && network.type == Ci.nsINetworkInterface.NETWORK_TYPE_WIFI) {
         shell.CrashSubmit.submit(aCrashID);
 
-        // purge the queue.
+        // submit the pending queue.
         let pending = shell.CrashSubmit.pendingIDs();
         for (let crashid of pending) {
           shell.CrashSubmit.submit(crashid);
@@ -738,10 +741,16 @@ var AlertsHelper = {
                           uid, name, null);
   },
 
-  receiveMessage: function alert_receiveMessage(message) {
-    let data = message.data;
+  receiveMessage: function alert_receiveMessage(aMessage) {
+    if (!aMessage.target.assertPermission("desktop-notification")) {
+      Cu.reportError("Desktop-notification message " + aMessage.name +
+                     " from a content process with no desktop-notification privileges.");
+      return null;
+    }
+
+    let data = aMessage.data;
     let listener = {
-      mm: message.target,
+      mm: aMessage.target,
       title: data.title,
       text: data.text,
       manifestURL: data.manifestURL,

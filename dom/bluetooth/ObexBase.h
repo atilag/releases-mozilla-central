@@ -104,7 +104,7 @@ enum ObexResponseCode {
 
 class ObexHeader {
 public:
-  ObexHeader(ObexHeaderId aId, int aDataLength, uint8_t* aData)
+  ObexHeader(ObexHeaderId aId, int aDataLength, const uint8_t* aData)
     : mId(aId)
     , mDataLength(aDataLength)
     , mData(nullptr)
@@ -119,7 +119,7 @@ public:
 
   ObexHeaderId mId;
   int mDataLength;
-  nsAutoPtr<uint8_t> mData;
+  nsAutoArrayPtr<uint8_t> mData;
 };
 
 class ObexHeaderSet {

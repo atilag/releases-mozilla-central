@@ -76,6 +76,60 @@ function testRemoveSetupMenu(cmd) {
   runNextTest();
 }
 
+function testPollingOff(cmd) {
+  log("STK CMD " + JSON.stringify(cmd));
+  is(cmd.typeOfCommand, icc.STK_CMD_POLL_OFF);
+  is(cmd.commandNumber, 0x01);
+  is(cmd.commandQualifier, 0x00);
+  is(cmd.options, null);
+
+  runNextTest();
+}
+
+function testRefresh(cmd) {
+  log("STK CMD " + JSON.stringify(cmd));
+  is(cmd.typeOfCommand, icc.STK_CMD_REFRESH);
+  is(cmd.commandNumber, 0x01);
+  is(cmd.commandQualifier, 0x01);
+  is(cmd.options, null);
+
+  runNextTest();
+}
+
+function testTimerManagementStart(cmd) {
+  log("STK CMD " + JSON.stringify(cmd));
+  is(cmd.typeOfCommand, icc.STK_CMD_TIMER_MANAGEMENT);
+  is(cmd.commandNumber, 0x01);
+  is(cmd.commandQualifier, icc.STK_TIMER_START);
+  is(cmd.options.timerAction, icc.STK_TIMER_START);
+  is(cmd.options.timerId, 0x01);
+  is(cmd.options.timerValue, (0x01 * 60 * 60) + (0x02 * 60) + 0x03);
+
+  runNextTest();
+}
+
+function testTimerManagementDeactivate(cmd) {
+  log("STK CMD " + JSON.stringify(cmd));
+  is(cmd.typeOfCommand, icc.STK_CMD_TIMER_MANAGEMENT);
+  is(cmd.commandNumber, 0x01);
+  is(cmd.commandQualifier, icc.STK_TIMER_DEACTIVATE);
+  is(cmd.options.timerAction, icc.STK_TIMER_DEACTIVATE);
+  is(cmd.options.timerId, 0x04);
+
+  runNextTest();
+}
+
+function testTimerManagementGetCurrentValue(cmd) {
+  log("STK CMD " + JSON.stringify(cmd));
+  is(cmd.typeOfCommand, icc.STK_CMD_TIMER_MANAGEMENT);
+  is(cmd.commandNumber, 0x01);
+  is(cmd.commandQualifier, icc.STK_TIMER_GET_CURRENT_VALUE);
+  is(cmd.options.timerAction, icc.STK_TIMER_GET_CURRENT_VALUE);
+  is(cmd.options.timerId, 0x08);
+
+  runNextTest();
+}
+
 let tests = [
   {command: "d0288103012180820281020d1d00d3309bfc06c95c301aa8e80259c3ec34b9ac07c9602f58ed159bb940",
    func: testDisplayTextGsm7BitEncoding},
@@ -91,6 +145,16 @@ let tests = [
    func: testRemoveSetupMenu},
   {command:"D03B810301250082028182850C546F6F6C6B6974204D656E758F07014974656D20318F07024974656D20328F07034974656D20338F07044974656D2034",
    func: testInitialSetupMenu},
+  {command: "d009810301040082028182",
+   func: testPollingOff},
+  {command: "d0108103010101820281829205013f002fe2",
+   func: testRefresh},
+  {command: "d011810301270082028182a40101a503102030",
+   func: testTimerManagementStart},
+  {command: "d00c810301270182028182a40104",
+   func: testTimerManagementDeactivate},
+  {command: "d00c810301270282028182a40108",
+   func: testTimerManagementGetCurrentValue},
 ];
 
 let pendingEmulatorCmdCount = 0;

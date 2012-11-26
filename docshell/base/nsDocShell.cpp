@@ -1961,6 +1961,14 @@ nsDocShell::GetChannelIsUnsafe(bool *aUnsafe)
 }
 
 NS_IMETHODIMP
+nsDocShell::GetHasMixedActiveContentLoaded(bool *aHasMixedActiveContentLoaded)
+{
+    nsCOMPtr<nsIDocument> doc(do_GetInterface(GetAsSupports(this)));
+    *aHasMixedActiveContentLoaded = doc && doc->GetHasMixedActiveContentLoaded();
+    return NS_OK;
+}
+
+NS_IMETHODIMP
 nsDocShell::GetAllowPlugins(bool * aAllowPlugins)
 {
     NS_ENSURE_ARG_POINTER(aAllowPlugins);
@@ -5211,7 +5219,7 @@ nsDocShell::SetIsActive(bool aIsActive)
       win->SetIsBackground(!aIsActive);
       nsCOMPtr<nsIDocument> doc = do_QueryInterface(win->GetExtantDocument());
       if (doc) {
-          doc->UpdateVisibilityState(false);
+          doc->PostVisibilityUpdateEvent();
       }
   }
 

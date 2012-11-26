@@ -561,6 +561,80 @@ NS_MEMORY_REPORTER_IMPLEMENT(AtomTable,
     GetAtomTableSize,
     "Memory used by the dynamic and static atoms tables.")
 
+#ifdef MOZ_DMD
+
+namespace mozilla {
+namespace dmd {
+
+class MemoryReporter MOZ_FINAL : public nsIMemoryMultiReporter
+{
+public:
+  MemoryReporter()
+  {}
+
+  NS_DECL_ISUPPORTS
+
+  NS_IMETHOD GetName(nsACString &name)
+  {
+    name.Assign("dmd");
+    return NS_OK;
+  }
+
+  NS_IMETHOD CollectReports(nsIMemoryMultiReporterCallback *callback,
+                            nsISupports *closure)
+  {
+    dmd::Sizes sizes;
+    dmd::SizeOf(&sizes);
+
+#define REPORT(_path, _amount, _desc)                                         \
+    do {                                                                      \
+      nsresult rv;                                                            \
+      rv = callback->Callback(EmptyCString(), NS_LITERAL_CSTRING(_path),      \
+                              nsIMemoryReporter::KIND_HEAP,                   \
+                              nsIMemoryReporter::UNITS_BYTES, _amount,        \
+                              NS_LITERAL_CSTRING(_desc), closure);            \
+      NS_ENSURE_SUCCESS(rv, rv);                                              \
+    } while (0)
+
+    REPORT("explicit/dmd/stack-traces/used",
+           sizes.mStackTracesUsed,
+           "Memory used by stack traces which correspond to at least "
+           "one heap block DMD is tracking.");
+
+    REPORT("explicit/dmd/stack-traces/unused",
+           sizes.mStackTracesUnused,
+           "Memory used by stack traces which don't correspond to any heap "
+           "blocks DMD is currently tracking.");
+
+    REPORT("explicit/dmd/stack-traces/table",
+           sizes.mStackTraceTable,
+           "Memory used by DMD's stack trace table.");
+
+    REPORT("explicit/dmd/block-table",
+           sizes.mBlockTable,
+           "Memory used by DMD's live block table.");
+
+#undef REPORT
+
+    return NS_OK;
+  }
+
+  NS_IMETHOD GetExplicitNonHeap(int64_t *n)
+  {
+    // No non-heap allocations.
+    *n = 0;
+    return NS_OK;
+  }
+
+};
+
+NS_IMPL_ISUPPORTS1(MemoryReporter, nsIMemoryMultiReporter)
+
+} // namespace dmd
+} // namespace mozilla
+
+#endif  // MOZ_DMD
+
 /**
  ** nsMemoryReporterManager implementation
  **/
@@ -601,8 +675,11 @@ nsMemoryReporterManager::Init()
     REGISTER(Private);
 #endif
 
-
     REGISTER(AtomTable);
+
+#ifdef MOZ_DMD
+    RegisterMultiReporter(new mozilla::dmd::MemoryReporter);
+#endif
 
 #if defined(XP_LINUX)
     nsMemoryInfoDumper::Initialize();
@@ -874,16 +951,21 @@ namespace {
  * When this sequence finishes, we invoke the callback function passed to the
  * runnable's constructor.
  */
-class MinimizeMemoryUsageRunnable : public nsRunnable
+class MinimizeMemoryUsageRunnable : public nsCancelableRunnable
 {
 public:
   MinimizeMemoryUsageRunnable(nsIRunnable* aCallback)
     : mCallback(aCallback)
     , mRemainingIters(sNumIters)
+    , mCanceled(false)
   {}
 
   NS_IMETHOD Run()
   {
+    if (mCanceled) {
+      return NS_OK;
+    }
+
     nsCOMPtr<nsIObserverService> os = services::GetObserverService();
     if (!os) {
       return NS_ERROR_FAILURE;
@@ -906,6 +988,17 @@ public:
     return NS_OK;
   }
 
+  NS_IMETHOD Cancel()
+  {
+    if (mCanceled) {
+      return NS_ERROR_UNEXPECTED;
+    }
+
+    mCanceled = true;
+
+    return NS_OK;
+  }
+
 private:
   // Send sNumIters heap-minimize notifications, spinning the event
   // loop after each notification (see bug 610166 comment 12 for an
@@ -914,15 +1007,21 @@ private:
 
   nsCOMPtr<nsIRunnable> mCallback;
   uint32_t mRemainingIters;
+  bool mCanceled;
 };
 
 } // anonymous namespace
 
 NS_IMETHODIMP
-nsMemoryReporterManager::MinimizeMemoryUsage(nsIRunnable* aCallback)
+nsMemoryReporterManager::MinimizeMemoryUsage(nsIRunnable* aCallback,
+                                             nsICancelableRunnable **result)
 {
-  nsRefPtr<MinimizeMemoryUsageRunnable> runnable =
+  NS_ENSURE_ARG_POINTER(result);
+
+  nsRefPtr<nsICancelableRunnable> runnable =
     new MinimizeMemoryUsageRunnable(aCallback);
+  NS_ADDREF(*result = runnable);
+
   return NS_DispatchToMainThread(runnable);
 }
 

@@ -79,7 +79,7 @@ DocAccessible::
   mVirtualCursor(nullptr),
   mPresShell(aPresShell)
 {
-  mFlags |= eDocAccessible;
+  mGenericTypes |= eDocument;
   mStateFlags |= eNotNodeMapEntry;
 
   MOZ_ASSERT(mPresShell, "should have been given a pres shell");
@@ -92,7 +92,7 @@ DocAccessible::
 
   // If this is a XUL Document, it should not implement nsHyperText
   if (mDocumentNode && mDocumentNode->IsXUL())
-    mFlags &= ~eHyperTextAccessible;
+    mGenericTypes &= ~eHyperText;
 
   // For GTK+ native window, we do nothing here.
   if (!mDocumentNode)
@@ -1517,8 +1517,10 @@ DocAccessible::DoInitialUpdate()
   // miss the notification (since content tree change notifications are ignored
   // prior to initial update). Make sure the content element is valid.
   nsIContent* contentElm = nsCoreUtils::GetRoleContent(mDocumentNode);
-  if (mContent != contentElm)
+  if (mContent != contentElm) {
     mContent = contentElm;
+    SetRoleMapEntry(aria::GetRoleMap(mContent));
+  }
 
   // Build initial tree.
   CacheChildrenInSubtree(this);
@@ -1739,8 +1741,10 @@ DocAccessible::ProcessContentInserted(Accessible* aContainer,
       if (aContainer == this) {
         // If new root content has been inserted then update it.
         nsIContent* rootContent = nsCoreUtils::GetRoleContent(mDocumentNode);
-        if (rootContent != mContent)
+        if (rootContent != mContent) {
           mContent = rootContent;
+          SetRoleMapEntry(aria::GetRoleMap(mContent));
+        }
 
         // Continue to update the tree even if we don't have root content.
         // For example, elements may be inserted under the document element while

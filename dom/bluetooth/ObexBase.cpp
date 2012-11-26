@@ -115,9 +115,7 @@ ParseHeaders(const uint8_t* aHeaderStart,
         break;
     }
 
-    uint8_t* content = new uint8_t[contentLength];
-    memcpy(content, ptr, contentLength);
-    aRetHandlerSet->AddHeader(new ObexHeader(headerId, contentLength, content));
+    aRetHandlerSet->AddHeader(new ObexHeader(headerId, contentLength, ptr));
 
     ptr += contentLength;
   }

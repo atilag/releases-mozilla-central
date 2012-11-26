@@ -295,14 +295,6 @@ var BrowserApp = {
       }
     });
 
-    // after gecko has loaded, set the checkerboarding pref once at startup (for testing only)
-    sendMessageToJava({
-      gecko: {
-        "type": "Checkerboard:Toggle",
-        "value": Services.prefs.getBoolPref("gfx.show_checkerboard_pattern")
-      }
-    });
-
 #ifdef MOZ_SAFE_BROWSING
     // Bug 778855 - Perf regression if we do this here. To be addressed in bug 779008.
     setTimeout(function() { SafeBrowsing.init(); }, 5000);
@@ -332,6 +324,17 @@ var BrowserApp = {
         BrowserApp.addTab(url, { selected: false, parentId: BrowserApp.selectedTab.id });
 
         let newtabStrings = Strings.browser.GetStringFromName("newtabpopup.opened");
+        let label = PluralForm.get(1, newtabStrings).replace("#1", 1);
+        NativeWindow.toast.show(label, "short");
+      });
+
+    NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.openInNewPrivateTab"),
+      NativeWindow.contextmenus.linkOpenableContext,
+      function(aTarget) {
+        let url = NativeWindow.contextmenus._getLinkURL(aTarget);
+        BrowserApp.addTab(url, { selected: false, parentId: BrowserApp.selectedTab.id, isPrivate: true });
+
+        let newtabStrings = Strings.browser.GetStringFromName("newprivatetabpopup.opened");
         let label = PluralForm.get(1, newtabStrings).replace("#1", 1);
         NativeWindow.toast.show(label, "short");
       });
@@ -411,6 +414,12 @@ var BrowserApp = {
         aTarget.pause();
       });
 
+    NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.showControls2"),
+      NativeWindow.contextmenus.mediaContext("media-hidingcontrols"),
+      function(aTarget) {
+        aTarget.setAttribute("controls", true);
+      });
+
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.shareMedia"),
       NativeWindow.contextmenus.SelectorContext("video"),
       function(aTarget) {
@@ -473,6 +482,18 @@ var BrowserApp = {
         }
         ContentAreaUtils.internalSave(aTarget.currentURI.spec, null, null, contentDisposition, type, false, "SaveImageTitle", null,
                                       aTarget.ownerDocument.documentURIObject, aTarget.ownerDocument, true, null);
+      });
+
+    NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.setWallpaper"),
+      NativeWindow.contextmenus.imageSaveableContext,
+      function(aTarget) {
+        let src = aTarget.src;
+        sendMessageToJava({
+          gecko: {
+            type: "Wallpaper:Set",
+            url: src
+          }
+        });
       });
   },
 
@@ -1201,7 +1222,7 @@ var NativeWindow = {
             callback: arguments[2]
           };
       } else {
-         return;
+         throw "Incorrect number of parameters";
       }
 
       options.type = "Menu:Add";
@@ -1457,23 +1478,46 @@ var NativeWindow = {
               return true;
             if (!paused && aMode == "media-playing")
               return true;
+            let controls = aElt.controls;
+            if (!controls && aMode == "media-hidingcontrols")
+              return true;
           }
           return false;
         }
       }
     },
 
+    get _target() {
+      if (this._targetRef)
+        return this._targetRef.get();
+      return null;
+    },
+  
+    set _target(aTarget) {
+      if (aTarget)
+        this._targetRef = Cu.getWeakReference(aTarget);
+      else this._targetRef = null;
+    },
+
     _sendToContent: function(aX, aY) {
-      // initially we look for nearby clickable elements. If we don't find one we fall back to using whatever this click was on
-      let rootElement = ElementTouchHelper.elementFromPoint(aX, aY);
-      if (!rootElement)
-        rootElement = ElementTouchHelper.anyElementFromPoint(aX, aY)
+      // find and store the top most element this context menu is being shown for
+      // use the highlighted element if possible, otherwise look for nearby clickable elements
+      // If we still don't find one we fall back to using anything
+      let target = BrowserEventHandler._highlightElement || ElementTouchHelper.elementFromPoint(aX, aY);
+      if (!target)
+        target = ElementTouchHelper.anyElementFromPoint(aX, aY);
+
+      if (!target)
+        return;
+
+      // store a weakref to the target to be used when the context menu event returns
+      this._target = target;
 
       this.menuitems = {};
       let menuitemsSet = false;
-      let element = rootElement;
-      if (!element)
-        return;
+
+      // now walk up the tree and for each node look for any context menu items that apply
+      let element = target;
 
       while (element) {
         for each (let item in this.items) {
@@ -1490,34 +1534,45 @@ var NativeWindow = {
 
       // only send the contextmenu event to content if we are planning to show a context menu (i.e. not on every long tap)
       if (menuitemsSet) {
-        let event = rootElement.ownerDocument.createEvent("MouseEvent");
+        let event = target.ownerDocument.createEvent("MouseEvent");
         event.initMouseEvent("contextmenu", true, true, content,
                              0, aX, aY, aX, aY, false, false, false, false,
                              0, null);
-        rootElement.ownerDocument.defaultView.addEventListener("contextmenu", this, false);
-        rootElement.dispatchEvent(event);
-      } else if (SelectionHandler.canSelect(rootElement)) {
-        SelectionHandler.startSelection(rootElement, aX, aY);
+        target.ownerDocument.defaultView.addEventListener("contextmenu", this, false);
+        target.dispatchEvent(event);
+      } else {
+        this._target = null;
+        BrowserEventHandler._cancelTapHighlight();
+
+        if (SelectionHandler.canSelect(target))
+          SelectionHandler.startSelection(target, aX, aY);
       }
     },
 
     _show: function(aEvent) {
-      if (aEvent.defaultPrevented)
+      let popupNode = this._target;
+      this._target = null;
+      if (aEvent.defaultPrevented || !popupNode) {
         return;
+      }
 
       Haptic.performSimpleAction(Haptic.LongPress);
 
-      let popupNode = aEvent.originalTarget;
-      let title = "";
-      if (popupNode.hasAttribute("title")) {
-        title = popupNode.getAttribute("title")
-      } else if ((popupNode instanceof Ci.nsIDOMHTMLAnchorElement && popupNode.href) ||
-              (popupNode instanceof Ci.nsIDOMHTMLAreaElement && popupNode.href)) {
-        title = this._getLinkURL(popupNode);
-      } else if (popupNode instanceof Ci.nsIImageLoadingContent && popupNode.currentURI) {
-        title = popupNode.currentURI.spec;
-      } else if (popupNode instanceof Ci.nsIDOMHTMLMediaElement) {
-        title = (popupNode.currentSrc || popupNode.src);
+      // spin through the tree looking for a title for this context menu
+      let node = popupNode;
+      let title ="";
+      while(node && !title) {
+        if (node.hasAttribute("title")) {
+          title = node.getAttribute("title")
+        } else if ((node instanceof Ci.nsIDOMHTMLAnchorElement && node.href) ||
+                (node instanceof Ci.nsIDOMHTMLAreaElement && node.href)) {
+          title = this._getLinkURL(node);
+        } else if (node instanceof Ci.nsIImageLoadingContent && node.currentURI) {
+          title = node.currentURI.spec;
+        } else if (node instanceof Ci.nsIDOMHTMLMediaElement) {
+          title = (node.currentSrc || node.src);
+        }
+        node = node.parentNode;
       }
 
       // convert this.menuitems object to an array for sending to native code
@@ -1550,12 +1605,12 @@ var NativeWindow = {
     },
 
     handleEvent: function(aEvent) {
+      BrowserEventHandler._cancelTapHighlight();
       aEvent.target.ownerDocument.defaultView.removeEventListener("contextmenu", this, false);
       this._show(aEvent);
     },
 
     observe: function(aSubject, aTopic, aData) {
-      BrowserEventHandler._cancelTapHighlight();
       let data = JSON.parse(aData);
       // content gets first crack at cancelling context menus
       this._sendToContent(data.x, data.y);
@@ -1692,9 +1747,6 @@ var SelectionHandler = {
           // Knowing when the page is done drawing is hard, so let's just cancel
           // the selection when the window changes. We should fix this later.
           this.endSelection();
-        } else if (this._activeType == this.TYPE_CURSOR) {
-          //  Hide the cursor if the window changes
-          this.hideThumb();
         }
         break;
       }
@@ -1709,8 +1761,13 @@ var SelectionHandler = {
         let data = JSON.parse(aData);
         if (this._activeType == this.TYPE_SELECTION)
           this.moveSelection(data.handleType == this.HANDLE_TYPE_START, data.x, data.y);
-        else if (this._activeType == this.TYPE_CURSOR)
+        else if (this._activeType == this.TYPE_CURSOR) {
+          // Send a click event to the text box, which positions the caret
           this._sendMouseEvents(data.x, data.y);
+
+          // Move the handle directly under the caret
+          this.positionHandles();
+        }
         break;
       }
       case "TextSelection:Position": {
@@ -1924,9 +1981,49 @@ var SelectionHandler = {
   },
 
   _sendMouseEvents: function sh_sendMouseEvents(aX, aY, useShift) {
-    // Send mouse event 1px too high to prevent selection from entering the line below where it should be
-    this._cwu.sendMouseEventToWindow("mousedown", aX, aY - 1, 0, 0, useShift ? Ci.nsIDOMNSEvent.SHIFT_MASK : 0, true);
-    this._cwu.sendMouseEventToWindow("mouseup", aX, aY - 1, 0, 0, useShift ? Ci.nsIDOMNSEvent.SHIFT_MASK : 0, true);
+    // If we're positioning a cursor in an input field, make sure the handle
+    // stays within the bounds of the field
+    if (this._activeType == this.TYPE_CURSOR) {
+      // Get rect of text inside element
+      let range = document.createRange();
+      range.selectNodeContents(this._target.QueryInterface(Ci.nsIDOMNSEditableElement).editor.rootElement);
+      let textBounds = range.getBoundingClientRect();
+
+      // Get rect of editor
+      let editorBounds = this._cwu.sendQueryContentEvent(this._cwu.QUERY_EDITOR_RECT, 0, 0, 0, 0);
+      let editorRect = new Rect(editorBounds.left, editorBounds.top, editorBounds.width, editorBounds.height);
+
+      // Use intersection of the text rect and the editor rect
+      let rect = new Rect(textBounds.left, textBounds.top, textBounds.width, textBounds.height);
+      rect.restrictTo(editorRect);
+
+      // Clamp vertically and scroll if handle is at bounds. The top and bottom
+      // must be restricted by an additional pixel since clicking on the top
+      // edge of an input field moves the cursor to the beginning of that
+      // field's text (and clicking the bottom moves the cursor to the end).
+      if (aY < rect.y + 1) {
+        aY = rect.y + 1;
+        this.getSelectionController().scrollLine(false);
+      } else if (aY > rect.y + rect.height - 1) {
+        aY = rect.y + rect.height - 1;
+        this.getSelectionController().scrollLine(true);
+      }
+
+      // Clamp horizontally and scroll if handle is at bounds
+      if (aX < rect.x) {
+        aX = rect.x;
+        this.getSelectionController().scrollCharacter(false);
+      } else if (aX > rect.x + rect.width) {
+        aX = rect.x + rect.width;
+        this.getSelectionController().scrollCharacter(true);
+      }
+    } else if (this._activeType == this.TYPE_SELECTION) {
+      // Send mouse event 1px too high to prevent selection from entering the line below where it should be
+      aY -= 1;
+    }
+
+    this._cwu.sendMouseEventToWindow("mousedown", aX, aY, 0, 0, useShift ? Ci.nsIDOMNSEvent.SHIFT_MASK : 0, true);
+    this._cwu.sendMouseEventToWindow("mouseup", aX, aY, 0, 0, useShift ? Ci.nsIDOMNSEvent.SHIFT_MASK : 0, true);
   },
 
   // aX/aY are in top-level window browser coordinates
@@ -2425,13 +2522,16 @@ nsBrowserAccess.prototype = {
     let newTab = (aWhere == Ci.nsIBrowserDOMWindow.OPEN_NEWWINDOW ||
                   aWhere == Ci.nsIBrowserDOMWindow.OPEN_NEWTAB ||
                   aWhere == Ci.nsIBrowserDOMWindow.OPEN_SWITCHTAB);
+    let isPrivate = false;
 
     if (newTab) {
       let parentId = -1;
       if (!isExternal && aOpener) {
         let parent = BrowserApp.getTabForWindow(aOpener.top);
-        if (parent)
+        if (parent) {
           parentId = parent.id;
+          isPrivate = PrivateBrowsingUtils.isWindowPrivate(parent.browser.contentWindow);
+        }
       }
 
       // BrowserApp.addTab calls loadURIWithFlags with the appropriate params
@@ -2440,6 +2540,7 @@ nsBrowserAccess.prototype = {
                                                                       external: isExternal,
                                                                       parentId: parentId,
                                                                       selected: true,
+                                                                      isPrivate: isPrivate,
                                                                       pinned: pinned });
 
       return tab.browser;
@@ -3463,7 +3564,7 @@ Tab.prototype = {
   },
 
   /** Update viewport when the metadata changes. */
-  updateViewportMetadata: function updateViewportMetadata(aMetadata) {
+  updateViewportMetadata: function updateViewportMetadata(aMetadata, aInitialLoad) {
     if (Services.prefs.getBoolPref("browser.ui.zoom.force-user-scalable")) {
       aMetadata.allowZoom = true;
       aMetadata.minZoom = aMetadata.maxZoom = NaN;
@@ -3479,12 +3580,12 @@ Tab.prototype = {
       aMetadata.maxZoom *= scaleRatio;
 
     ViewportHandler.setMetadataForDocument(this.browser.contentDocument, aMetadata);
-    this.updateViewportSize(gScreenWidth);
+    this.updateViewportSize(gScreenWidth, aInitialLoad);
     this.sendViewportMetadata();
   },
 
   /** Update viewport when the metadata or the window size changes. */
-  updateViewportSize: function updateViewportSize(aOldScreenWidth) {
+  updateViewportSize: function updateViewportSize(aOldScreenWidth, aInitialLoad) {
     // When this function gets called on window resize, we must execute
     // this.sendViewportUpdate() so that refreshDisplayPort is called.
     // Ensure that when making changes to this function that code path
@@ -3576,7 +3677,7 @@ Tab.prototype = {
     // within the screen width. Note that "actual content" may be different
     // with respect to CSS pixels because of the CSS viewport size changing.
     let zoomScale = (screenW * oldBrowserWidth) / (aOldScreenWidth * viewportW);
-    let zoom = this.clampZoom(this._zoom * zoomScale);
+    let zoom = (aInitialLoad && metadata.defaultZoom) ? metadata.defaultZoom : this.clampZoom(this._zoom * zoomScale);
     this.setResolution(zoom, false);
     this.setScrollClampingSize(zoom);
     this.sendViewportUpdate();
@@ -3633,7 +3734,7 @@ Tab.prototype = {
           // things here before calling updateMetadata.
           this.setBrowserSize(kDefaultCSSViewportWidth, kDefaultCSSViewportHeight);
           this.setResolution(gScreenWidth / this.browserWidth, false);
-          ViewportHandler.updateMetadata(this);
+          ViewportHandler.updateMetadata(this, true);
 
           // Note that if we draw without a display-port, things can go wrong. By the
           // time we execute this, it's almost certain a display-port has been set via
@@ -3656,7 +3757,7 @@ Tab.prototype = {
         break;
       case "nsPref:changed":
         if (aData == "browser.ui.zoom.force-user-scalable")
-          ViewportHandler.updateMetadata(this);
+          ViewportHandler.updateMetadata(this, false);
         break;
     }
   },
@@ -5070,7 +5171,7 @@ var ViewportHandler = {
         let browser = BrowserApp.getBrowserForDocument(document);
         let tab = BrowserApp.getTabForBrowser(browser);
         if (tab)
-          this.updateMetadata(tab);
+          this.updateMetadata(tab, false);
         break;
     }
   },
@@ -5093,9 +5194,9 @@ var ViewportHandler = {
     }
   },
 
-  updateMetadata: function updateMetadata(tab) {
+  updateMetadata: function updateMetadata(tab, aInitialLoad) {
     let metadata = this.getViewportMetadata(tab.browser.contentWindow);
-    tab.updateViewportMetadata(metadata);
+    tab.updateViewportMetadata(metadata, aInitialLoad);
   },
 
   /**
@@ -5132,6 +5233,8 @@ var ViewportHandler = {
     let allowZoomStr = windowUtils.getDocumentMetadata("viewport-user-scalable");
     let allowZoom = !/^(0|no|false)$/.test(allowZoomStr) && (minScale != maxScale);
 
+    let autoSize = true;
+
     if (isNaN(scale) && isNaN(minScale) && isNaN(maxScale) && allowZoomStr == "" && widthStr == "" && heightStr == "") {
       // Only check for HandheldFriendly if we don't have a viewport meta tag
       let handheldFriendly = windowUtils.getDocumentMetadata("HandheldFriendly");
@@ -5141,15 +5244,23 @@ var ViewportHandler = {
       let doctype = aWindow.document.doctype;
       if (doctype && /(WAP|WML|Mobile)/.test(doctype.publicId))
         return { defaultZoom: 1, autoSize: true, allowZoom: true };
+
+      let defaultZoom = Services.prefs.getIntPref("browser.viewport.defaultZoom");
+      if (defaultZoom >= 0) {
+        scale = defaultZoom / 1000;
+        autoSize = false;
+      }
     }
 
     scale = this.clamp(scale, kViewportMinScale, kViewportMaxScale);
     minScale = this.clamp(minScale, kViewportMinScale, kViewportMaxScale);
     maxScale = this.clamp(maxScale, minScale, kViewportMaxScale);
 
-    // If initial scale is 1.0 and width is not set, assume width=device-width
-    let autoSize = (widthStr == "device-width" ||
-                    (!widthStr && (heightStr == "device-height" || scale == 1.0)));
+    if (autoSize) {
+      // If initial scale is 1.0 and width is not set, assume width=device-width
+      autoSize = (widthStr == "device-width" ||
+                  (!widthStr && (heightStr == "device-height" || scale == 1.0)));
+    }
 
     return {
       defaultZoom: scale,
@@ -5959,7 +6070,7 @@ var PluginHelper = {
   // Helper to get the binding handler type from a plugin object
   _getBindingType: function(plugin) {
     if (!(plugin instanceof Ci.nsIObjectLoadingContent))
-      return;
+      return null;
 
     switch (plugin.pluginFallbackType) {
       case Ci.nsIObjectLoadingContent.PLUGIN_UNSUPPORTED:
@@ -5970,7 +6081,7 @@ var PluginHelper = {
         return "PluginPlayPreview";
       default:
         // Not all states map to a handler
-        return;
+        return null;
     }
   },
 

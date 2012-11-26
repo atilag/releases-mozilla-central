@@ -8,6 +8,7 @@
 #define DMD_h___
 
 #include <stdarg.h>
+#include <string.h>
 
 #include "mozilla/Types.h"
 
@@ -16,11 +17,11 @@ namespace dmd {
 
 // Mark a heap block as reported by a memory reporter.
 MOZ_EXPORT void
-Report(const void* aPtr, const char* aReporterName);
+Report(const void* aPtr);
 
 // Mark a heap block as reported immediately on allocation.
 MOZ_EXPORT void
-ReportOnAlloc(const void* aPtr, const char* aReporterName);
+ReportOnAlloc(const void* aPtr);
 
 class Writer
 {
@@ -48,6 +49,22 @@ Dump(Writer aWriter);
 // written to, call |Dump(FpWrite, fp)|.
 MOZ_EXPORT void
 FpWrite(void* aFp, const char* aFmt, va_list aAp);
+
+struct Sizes
+{
+  size_t mStackTracesUsed;
+  size_t mStackTracesUnused;
+  size_t mStackTraceTable;
+  size_t mBlockTable;
+
+  Sizes() { Clear(); }
+  void Clear() { memset(this, 0, sizeof(Sizes)); }
+};
+
+// Gets the size of various data structures.  Used to implement a memory
+// reporter for DMD.
+MOZ_EXPORT void
+SizeOf(Sizes* aSizes);
 
 } // namespace mozilla
 } // namespace dmd

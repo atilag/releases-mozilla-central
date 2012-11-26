@@ -23,11 +23,15 @@ function test() {
   gTestBrowser.addEventListener("load", pageLoad, true);
   gTestBrowser.addEventListener("PluginScripted", pluginScripted, true);
 
+  // This list is iterated in reverse order, since it uses Array.pop to get the next test.
   gNextTestList = [
-    { func: testExpectPopupPart1,
+    // Doesn't show a popup since not the first instance of a small plugin
+    { func: testExpectNoPopupPart1,
       url: gHttpTestRoot + "plugin_test_scriptedPopup1.html" },
-    { func: testExpectPopupPart1,
+    // Doesn't show a popup since not the first instance of a small plugin
+    { func: testExpectNoPopupPart1,
       url: gHttpTestRoot + "plugin_test_scriptedPopup2.html" },
+    // Shows a popup since it is the first instance of a small plugin
     { func: testExpectPopupPart1,
       url: gHttpTestRoot + "plugin_test_scriptedPopup3.html" },
     { func: testExpectNoPopupPart1,
@@ -95,7 +99,7 @@ function testExpectNoPopupPart1() {
 }
 
 function testExpectNoPopupPart2() {
-  var condition = function() gTestBrowser._pluginScriptedState == PLUGIN_SCRIPTED_STATE_DONE;
+  var condition = function() gTestBrowser._pluginScriptedState == gPluginHandler.PLUGIN_SCRIPTED_STATE_DONE;
   waitForCondition(condition, testExpectNoPopupPart3, "waited too long for PluginScripted event handling (" + getCurrentTestLocation() + ")");
 }
 

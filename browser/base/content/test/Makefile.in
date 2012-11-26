@@ -10,6 +10,7 @@ relativesrcdir  = @relativesrcdir@
 
 DIRS += \
 		newtab \
+		social \
 		$(NULL)
 
 include $(DEPTH)/config/autoconf.mk
@@ -254,6 +255,7 @@ _BROWSER_FILES = \
                  plugin_bug749455.html \
                  plugin_bug797677.html \
                  plugin_bug818009.html \
+                 plugin_bug820497.html \
                  plugin_hidden_to_visible.html \
                  plugin_two_types.html \
                  alltabslistener.html \
@@ -282,28 +284,15 @@ _BROWSER_FILES = \
                  browser_bug812562.js \
                  browser_bug818009.js \
                  browser_bug818118.js \
+                 browser_bug820497.js \
                  blockPluginVulnerableUpdatable.xml \
                  blockPluginVulnerableNoUpdate.xml \
                  blockNoPlugins.xml \
                  browser_utilityOverlay.js \
-                 browser_social.js \
-                 browser_social_toolbar.js \
-                 browser_social_shareButton.js \
-                 browser_social_sidebar.js \
-                 browser_social_flyout.js \
-                 browser_social_mozSocial_API.js \
-                 browser_social_isVisible.js \
-                 browser_social_chatwindow.js \
-                 browser_social_multiprovider.js \
-                 social_panel.html \
-                 social_share_image.png \
-                 social_sidebar.html \
-                 social_chat.html \
-                 social_flyout.html \
-                 social_window.html \
-                 social_worker.js \
                  browser_bug676619.js \
                  download_page.html \
+                 browser_URLBarSetURI.js \
+                 browser_bookmark_titles.js \
                  $(NULL)
 
 ifneq (cocoa,$(MOZ_WIDGET_TOOLKIT))

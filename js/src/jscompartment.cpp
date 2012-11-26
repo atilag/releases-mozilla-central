@@ -5,6 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/DebugOnly.h"
+
 #include "jscntxt.h"
 #include "jsdate.h"
 #include "jscompartment.h"
@@ -75,6 +77,7 @@ JSCompartment::JSCompartment(JSRuntime *rt)
     gcIncomingGrayPointers(NULL),
     gcLiveArrayBuffers(NULL),
     gcWeakMapList(NULL),
+    gcGrayRoots(),
     gcMallocBytes(0),
     debugModeBits(rt->debugMode ? DebugFromC : 0),
     watchpointMap(NULL),
@@ -566,6 +569,8 @@ JSCompartment::markTypes(JSTracer *trc)
         MarkTypeObjectRoot(trc, &type, "mark_types_scan");
         JS_ASSERT(type == i.get<types::TypeObject>());
     }
+
+    gcTypesMarked = true;
 }
 
 void

@@ -8,6 +8,8 @@
 #ifndef jsion_macro_assembler_arm_h__
 #define jsion_macro_assembler_arm_h__
 
+#include "mozilla/DebugOnly.h"
+
 #include "ion/arm/Assembler-arm.h"
 #include "ion/IonCaches.h"
 #include "ion/IonFrames.h"
@@ -47,6 +49,8 @@ class MacroAssemblerARM : public Assembler
     void convertUInt32ToDouble(const Register &src, const FloatRegister &dest);
     void convertDoubleToFloat(const FloatRegister &src, const FloatRegister &dest);
     void branchTruncateDouble(const FloatRegister &src, const Register &dest, Label *fail);
+
+    void negateDouble(FloatRegister reg);
 
     void inc64(AbsoluteAddress dest);
 
@@ -1028,6 +1032,8 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     void setStackArg(const Register &reg, uint32_t arg);
 
     void breakpoint();
+    // conditional breakpoint
+    void breakpoint(Condition cc);
 
     void compareDouble(FloatRegister lhs, FloatRegister rhs);
     void branchDouble(DoubleCondition cond, const FloatRegister &lhs, const FloatRegister &rhs,
@@ -1065,8 +1071,14 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     void passABIArg(const FloatRegister &reg);
     void passABIArg(const ValueOperand &regs);
 
+  private:
+    void callWithABIPre(uint32_t *stackAdjust);
+    void callWithABIPost(uint32_t stackAdjust, Result result);
+
+  public:
     // Emits a call to a C/C++ function, resolving all argument moves.
     void callWithABI(void *fun, Result result = GENERAL);
+    void callWithABI(const Address &fun, Result result = GENERAL);
 
     CodeOffsetLabel labelForPatch() {
         return CodeOffsetLabel(nextOffset().getOffset());
