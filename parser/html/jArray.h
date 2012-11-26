@@ -101,7 +101,7 @@ class autoJArray {
       length = other.length;
     }
 #if defined(MOZ_HAVE_CXX11_NULLPTR)
-#  if defined(__clang__) || defined(__ANDROID__) || defined(MOZ_B2G)
+#  if defined(__clang__) || defined(__ANDROID__)
     // clang on OS X 10.7 and gcc-4.6 on android does not have std::nullptr_t
     typedef decltype(nullptr) jArray_nullptr_t;
 #  else
